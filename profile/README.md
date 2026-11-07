@@ -114,6 +114,8 @@
 ### control-plane · 오케스트레이터
 [control-plane](https://github.com/SoftBank-2026-Hackathon-Foxtrot/control-plane) · 이현수
 
+<img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/control-plane/release/2/docs/architecture.png" alt="control-plane 구조도" width="100%">
+
 - **상태 없는 틱 엔진.** 틱마다 DynamoDB에서 읽고 한 가지만 수행한 뒤 저장합니다. 외부 변경 전에 의도와 멱등 키를 먼저 기록해, 응답을 잃어도 같은 키로 원래 작업을 찾습니다.
 - **모르면 멈춥니다.** 결과가 불명확하면 RECONCILE 전까지 다음 변경을 보내지 않습니다.
 - **업무 정지는 짧게.** 정지 중에만 틱을 0.1초, 앱 폴링을 200ms로 줄였습니다. 앱 프로세스 12개 기준 DB 전환 업무 정지가 11.21초에서 1.45초로 줄었습니다(로컬, 10회 중앙값). 대신 정지 중 heartbeat가 프로세스당 초당 5회로 늘어납니다.
@@ -122,6 +124,8 @@
 
 ### db-migration-adaptor · PostgreSQL
 [db-migration-adaptor](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor) · 임태현
+
+<img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/db.png" alt="db-migration-adaptor 구조도" width="100%">
 
 - **직접 논리 복제가 기본.** RDS PostgreSQL 17 → Cloud SQL PostgreSQL 17을 초기 복사와 CDC로 따라갑니다. DMS는 명시적으로 고를 때만 쓰고, 실패해도 다른 방식으로 자동 전환하지 않습니다.
 - **전환 근거는 LSN.** 업무 정지 근거 → PgBouncer PAUSE → writer 차단 → 최종 barrier · 적용 LSN 확인 → 구독 정지 → 시퀀스 맞춤 → 경로 변경 순서입니다. 정지 중 테이블 전수 비교는 하지 않습니다. 대가로 행 내용 전체 일치는 검사하지 않습니다.
@@ -297,6 +301,8 @@ RESUME        붙잡은 PUBLISH가 이미 구독이 걸린 대상으로 감
 ### object-migration · 객체 저장소
 [object-migration](https://github.com/SoftBank-2026-Hackathon-Foxtrot/object-migration) · 노영진
 
+<img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/object.png" alt="object-migration 구조도" width="100%">
+
 - **쓰기를 멈추지 않습니다.** 키를 다시 쓰지 않으므로, 읽기를 두 버킷으로 넓힌 뒤 쓰기만 대상으로 옮깁니다.
 - **앱이 확인해야 다음 단계.** 앱은 5초 리스로 경로를 갱신하고, 모든 앱이 적용했다고 확인해야 넘어갑니다. 삭제할 키를 먼저 기록해 복사와 삭제가 어느 순서로 끝나도 결과가 맞습니다.
 - **변경 피드:** S3는 SQS, Cloud Storage는 Pub/Sub, SeaweedFS는 filer 구독을 따라갑니다.
@@ -306,6 +312,8 @@ RESUME        붙잡은 PUBLISH가 이미 구독이 걸린 대상으로 감
 ### traffic · 진입점
 [traffic](https://github.com/SoftBank-2026-Hackathon-Foxtrot/traffic) · 임채준
 
+<img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/traffic.png" alt="traffic 구조도" width="100%">
+
 - **Cloudflare LB 가중치.** steering은 random, 세션 어피니티는 껐습니다. 세션은 Redis에 있으므로 요청 단위로 나눠도 됩니다.
 - **API 성공 ≠ 반영 완료.** 95:5에서 keepalive 연결은 GCP 0.0%, 매번 새 연결은 7.7%가 도착했습니다. 그래서 적용 후 실제 도착 위치를 다시 확인합니다.
 - **`/readyz`는 DB를 보지 않습니다.** DB 전환 중 PgBouncer가 멈춰도 모든 pool이 동시에 빠지지 않게 하기 위해서입니다.
@@ -314,6 +322,8 @@ RESUME        붙잡은 PUBLISH가 이미 구독이 걸린 대상으로 감
 ### IaC · 환경
 [IaC](https://github.com/SoftBank-2026-Hackathon-Foxtrot/IaC) · 김정빈 · 노영진
 
+<img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/iac.png" alt="IaC 구조도" width="100%">
+
 - 원본과 대상 환경(네트워크, RDS · Cloud SQL, ElastiCache · Memorystore, S3 · Cloud Storage, 앱 서버)을 Terraform으로 만들고, 레지스트리 이미지로 실행 중인 앱까지 띄웁니다.
 - **AI 추천은 사양만.** HCL, IAM, CIDR, 공개 여부는 바꾸지 않습니다. plan을 확인한 뒤 같은 saved plan을 실행합니다.
 - **실측:** 실제 EC2 → GCE 컴퓨트 리허설에서 세션 요청 291건 모두 성공(p95 19.3ms), 정리 후 잔여 자원 0개.
@@ -321,12 +331,16 @@ RESUME        붙잡은 PUBLISH가 이미 구독이 걸린 대상으로 감
 ### platform-frontend · 콘솔
 [platform-frontend](https://github.com/SoftBank-2026-Hackathon-Foxtrot/platform-frontend) · 이현수 · 임태현
 
+<img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/frontend.png" alt="platform-frontend 구조도" width="100%">
+
 - React · TypeScript · TanStack Query · shadcn/ui, Feature-Sliced Design. 한국어 · English · 日本語를 지원합니다.
 - **보고된 것만 그립니다.** 전환 구성도는 백엔드가 보고한 경로와 스트림만 움직입니다. 측정되지 않은 값은 0이 아니라 미확인으로 표시합니다.
 - 명령은 멱등 키와 기대 버전을 함께 보냅니다. 응답은 런타임 스키마로 검증합니다.
 
 ### demo · 이전 대상 앱
 [demo](https://github.com/SoftBank-2026-Hackathon-Foxtrot/demo) · 이현수
+
+<img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/demo/release/2/docs/architecture.png" alt="치이카와 공구앱 구조도" width="100%">
 
 - FastAPI와 React로 만든 라이브 공동구매 앱입니다. 세션 · 캐시 · 큐 · 채팅 전달은 Redis, 주문과 채팅 기록은 PostgreSQL, 영수증은 객체 저장소에 둡니다.
 - 플랫폼의 업무 정지 지시와 Redis · 객체 경로 지시를 따릅니다. 업무 정지 해제 후 0.45초 안에 프로세스 6개가 모두 재개했습니다(로컬).
