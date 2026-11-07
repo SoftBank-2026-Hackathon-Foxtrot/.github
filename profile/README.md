@@ -524,7 +524,7 @@ READY       변경 지연과 전체 비교가 기준을 통과해야 전환 허�
 근거: [구현·방향별 실측](https://github.com/SoftBank-2026-Hackathon-Foxtrot/object-migration/blob/75da4f0/README.md) · [앱 스토리지 규약](https://github.com/SoftBank-2026-Hackathon-Foxtrot/object-migration/blob/75da4f0/docs/app-storage.md) · [복사·검증 엔진](https://github.com/SoftBank-2026-Hackathon-Foxtrot/object-migration/blob/75da4f0/internal/engine/rclone.go) · [경로 전환 워커](https://github.com/SoftBank-2026-Hackathon-Foxtrot/object-migration/blob/75da4f0/internal/worker/worker.go)
 
 ### traffic · 진입점
-[traffic](https://github.com/SoftBank-2026-Hackathon-Foxtrot/traffic) · 임채준
+[traffic](https://github.com/SoftBank-2026-Hackathon-Foxtrot/traffic)
 
 <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/traffic.png" alt="traffic 구조도" width="100%">
 
@@ -572,7 +572,6 @@ READY       변경 지연과 전체 비교가 기준을 통과해야 전환 허�
     <td align="center"><a href="https://github.com/hyunsuhahaha"><img src="https://github.com/hyunsuhahaha.png?size=120" width="72"><br><sub><b>이현수</b></sub></a><br><sub>플랫폼 백엔드 · 콘솔<br>Redis · 데모 앱</sub></td>
     <td align="center"><a href="https://github.com/noeulnight"><img src="https://github.com/noeulnight.png?size=120" width="72"><br><sub><b>임태현</b></sub></a><br><sub>DB 마이그레이션<br>콘솔 API</sub></td>
     <td align="center"><a href="https://github.com/yyoungjin"><img src="https://github.com/yyoungjin.png?size=120" width="72"><br><sub><b>노영진</b></sub></a><br><sub>객체 저장소<br>IaC</sub></td>
-    <td align="center"><a href="https://github.com/dlacowns21"><img src="https://github.com/dlacowns21.png?size=120" width="72"><br><sub><b>임채준</b></sub></a><br><sub>트래픽 계층</sub></td>
     <td align="center"><a href="https://github.com/SuperSon7"><img src="https://github.com/SuperSon7.png?size=120" width="72"><br><sub><b>김정빈</b></sub></a><br><sub>IaC · 배포<br>관측</sub></td>
   </tr>
 </table>
@@ -676,7 +675,7 @@ READY       변경 지연과 전체 비교가 기준을 통과해야 전환 허�
 | [db-migration-adaptor](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor) | 임태현 | 直接の論理レプリケーション(初期コピー + CDC)。最終 LSN を根拠に PgBouncer の経路を切り替えます。 | RDS → Cloud SQL、注文5万件で書き込み停止 2.82秒、エラー0件。 |
 | [redis-migrator](https://github.com/SoftBank-2026-Hackathon-Foxtrot/redis-migrator) | 이현수 | Go の RESP プロキシ。Sync Worker が keyspace 通知を購読し、変わったキーを読み直して反映します。 | キー30万個で書き込み停止 46~61ms、失敗0件。Pub/Sub の欠落 · 重複0件。 |
 | [object-migration](https://github.com/SoftBank-2026-Hackathon-Foxtrot/object-migration) | 노영진 | 書き込みを止めない2段階の経路切り替え。SQS · Pub/Sub · filer 購読で変更を追います。 | 7方向で失敗0件。SIGKILL 再起動でも欠落 · 残存0件。 |
-| [traffic](https://github.com/SoftBank-2026-Hackathon-Foxtrot/traffic) | 임채준 | Cloudflare LB の重み。API の成功だけでなく実際の到着先を確認します。 | EC2 ↔ GCE で 3,000件中失敗0件(p95 110ms)。 |
+| [traffic](https://github.com/SoftBank-2026-Hackathon-Foxtrot/traffic) | — | Cloudflare LB の重み。API の成功だけでなく実際の到着先を確認します。 | EC2 ↔ GCE で 3,000件中失敗0件(p95 110ms)。 |
 | [IaC](https://github.com/SoftBank-2026-Hackathon-Foxtrot/IaC) | 김정빈 · 노영진 | Terraform で移行元 · 移行先の環境と稼働中のアプリまで作ります。AI の推奨はサイズだけです。 | EC2 → GCE のリハーサルでセッションリクエスト 291件すべて成功。 |
 | [platform-frontend](https://github.com/SoftBank-2026-Hackathon-Foxtrot/platform-frontend) | 이현수 · 임태현 | 報告された値だけを描く切り替え図。韓国語 · 英語 · 日本語。 | — |
 | [demo](https://github.com/SoftBank-2026-Hackathon-Foxtrot/demo) | 이현수 | 移行対象のライブ共同購入アプリ。業務停止と経路の指示に従います。 | 業務停止の解除後 0.45秒で6プロセスが再開(ローカル)。 |
