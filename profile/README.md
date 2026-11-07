@@ -127,10 +127,116 @@
 
 <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/db.png" alt="db-migration-adaptor 구조도" width="100%">
 
-- **직접 논리 복제가 기본.** RDS PostgreSQL 17 → Cloud SQL PostgreSQL 17을 초기 복사와 CDC로 따라갑니다. DMS는 명시적으로 고를 때만 쓰고, 실패해도 다른 방식으로 자동 전환하지 않습니다.
-- **전환 근거는 LSN.** 업무 정지 근거 → PgBouncer PAUSE → writer 차단 → 최종 barrier · 적용 LSN 확인 → 구독 정지 → 시퀀스 맞춤 → 경로 변경 순서입니다. 정지 중 테이블 전수 비교는 하지 않습니다. 대가로 행 내용 전체 일치는 검사하지 않습니다.
-- **실측:** 실제 RDS → Cloud SQL, 주문 5만 건에서 등록부터 쓰기 재개까지 8.58초, 쓰기 정지 2.82초, 쓰기 오류 0건(1회). 로컬 처리량은 0.5 CPU에서 주문 1,471 TPS, 전환 3.52초, 롤백 3.89초입니다.
-- **한계:** 롤백은 대상 쓰기 전까지만 됩니다(역방향 CDC 없음). v2 프로필의 클라우드 전환 시간은 아직 다시 재지 않았습니다.
+**앱은 같은 PgBouncer 주소를 계속 쓰고, PostgreSQL의 초기 복사와 CDC가 따라잡은 뒤 실제 DB 경로를 바꿉니다.** 현재 기본은 **RDS PostgreSQL 17 → 독립 Cloud SQL PostgreSQL 17의 직접 논리 복제**입니다. 짧은 업무 쓰기 정지 안에서 원본을 차단하고 최종 복제 위치를 확인합니다. DB 인스턴스를 새로 만드는 작업과 앱의 정지·재개는 오케스트레이터가 맡습니다.
+
+| 검증 환경 · 프로필 | 결과와 범위 |
+|---|---|
+| 실제 RDS → Cloud SQL · 관리형 v1 | 초기 주문 **50,000건** · 상품 128개, 복사 중 원본 쓰기 계속. 앱 등록 → 쓰기 재개 **8.58초**, 쓰기 정지 **2.82초**, 쓰기 오류 **0건** (1회) |
+| 같은 클라우드 실측의 대상 첫 주문 | 등록 → 대상 첫 주문 커밋 **8.78초**. DB·schema 준비와 컨테이너 시작은 제외 |
+| PostgreSQL 17 · PgBouncer · DynamoDB Local · 관리형 v2 | DB 단위 **70개**, 관련 통합 **18개** 통과. Cloud SQL 메타데이터 응답은 모의이며, **v2 클라우드 전환 시간은 미측정** |
+| 자체 운영 PostgreSQL 18 · 기존 랩 프로필 | backend + PgBouncer 합계 **0.5 CPU · 1 GiB**에서 주문 **1,471 TPS**, 전환 **3.52초**, 역방향 롤백 **3.89초** |
+
+클라우드 실측에서도 API·Worker·PgBouncer와 DynamoDB Local은 로컬 Docker에서 실행했습니다. 실제 AWS ECS 배포 성능을 잰 결과는 아닙니다. 로컬 TPS는 HTTP 앱을 거치지 않은 DB 트랜잭션 처리량(6초씩 3회 중앙값)이며, PostgreSQL·DynamoDB·부하 생성기는 위 자원 한도 밖입니다. **랩의 역방향 롤백 결과를 관리형 DB의 기능으로 적용하지 않습니다.**
+
+**구성.** **FastAPI**가 명령을 접수해 **DynamoDB**에 기록하고, **Python Worker**가 PostgreSQL 복제·writer 권한·PgBouncer를 제어합니다. 앱의 SQL은 PgBouncer에서 현재 DB로 바로 가며 DynamoDB를 거치지 않습니다. 배포 구성은 API·Worker를 함께 실행하는 backend와 PgBouncer, 두 컨테이너를 단일 Task에 두는 형태입니다.
+
+#### ① 복제 방식은 명시적으로 선택: 현재 기본과 기존 실측을 구분
+
+| 프로필 | 복제 · 명령 동작 | 롤백 범위 |
+|---|---|---|
+| `postgres-managed-logical-pgbouncer-v2` · 현재 기본 | PostgreSQL 17 직접 논리 복제. `CUTOVER` 안에서 DB 정지·전환·재개 완료 | 대상 쓰기 허용 의도를 기록하기 전까지 원본 복귀 |
+| `postgres-managed-logical-pgbouncer-v1` | 같은 관리형 직접 논리 복제. 정지·경로 변경·재개를 명령별로 분리. **2.82초 실측의 프로필** | 대상 쓰기 전 원본 복귀 |
+| `gcp-dms-postgres-pgbouncer-v1` | 승인한 DMS 작업을 `replicationRef`로 지정해 복사·CDC·Promote | 대상 쓰기 전 원본 복귀 |
+| `postgres-logical-pgbouncer-v1` · 자체 운영 랩 | PostgreSQL 18 자체 복제. 별도로 선택하는 기존 프로필 | `REVERSE_REQUIRED`에서 역복제를 준비·검증한 뒤 대상 쓰기 후 복귀 |
+
+DMS가 실패했다고 직접 복제로 자동 변경하지 않습니다. 실제 DMS 경로의 쓰기 정지는 **67.18초**(그중 Promote 40.07초)였지만 주문 549,370건·추가 쓰기 0건 조건입니다. 직접 복제 실측과 데이터·부하가 달라 성능 배수로 비교하지 않습니다. 직접 복제는 DMS Promote를 호출하지 않아도 원본 차단과 최종 복제 확인이 필요합니다.
+
+#### ② 초기 복사와 CDC: 같은 schema, 등록된 writer, 비어 있는 대상부터
+
+```txt
+PREPARE     DB·권한·schema·등록 범위 검사 → schema 기준값과 자원 점유 기록
+START_SYNC  원본 publication + 대상 subscription 생성 (copy_data=true)
+            → 기존 행 초기 복사 → 이후 INSERT·UPDATE·DELETE 계속 복제
+READY       등록한 전체 테이블의 초기 동기화 완료와 실제 복제 상태 확인
+```
+
+- **스키마와 역할은 미리 준비합니다.** 대상 업무 테이블은 비어 있고 대상 writer는 `NOLOGIN`이어야 합니다. 테이블·시퀀스·업무 주체를 등록하고, 복제 시작과 전환 전에 준비 당시 schema 기준값을 다시 검사합니다. 이전 중 DDL과 외부 관리 변경은 허용하지 않습니다.
+- **앱과 관리·복제 계정을 분리합니다.** 앱 writer는 관리자나 테이블 소유자가 아니어야 합니다. 원본은 logical WAL과 RDS 복제 권한, 대상은 Cloud SQL subscription 관리 권한이 필요합니다.
+- **대상 인스턴스도 확인합니다.** Cloud SQL Admin API로 실제 인스턴스·주소와 독립 DB 여부를 확인하며, DMS 복제 대상이나 읽기 복제본은 이 직접 복제 경로에서 거절합니다.
+- **명령 성공과 복사 완료는 다릅니다.** `START_SYNC` 접수·실행이 성공해도 초기 복사가 끝난 것은 아닙니다. 오케스트레이터는 상태를 조회해 `READY`를 확인해야 합니다.
+
+#### ③ v2 전환: 준비 확인은 쓰기를 열어 둔 채, 실제 정지는 CUTOVER 안에서
+
+| 명령 · 제어 | 실제 동작 |
+|---|---|
+| `QUIESCE` | 원본 운영·schema·초기 복제 완료 확인. **DB 쓰기는 계속 허용** |
+| 앱 업무 정지 | 오케스트레이터가 앱·업무 Worker·예약 작업의 신규 업무를 막고 모든 참여자의 `HELD` · `inFlight=0`을 확인 |
+| `CUTOVER` | 실제 정지 근거 검사 → PgBouncer `PAUSE` → 원본 writer 차단 → 최종 복제 확인 → 구독 정지 → 시퀀스 맞춤 → 원본 복제 slot 정리 → 대상 경로 변경 → 대상 writer·PgBouncer 재개 |
+| `RESUME expectedLocation=TARGET` | 이미 열린 대상 경로·권한·복제 완료 근거를 조회해 확인. **DB·프록시 변경 없음** |
+| 앱 업무 재개 | 확인이 끝나면 오케스트레이터가 앱 업무를 `RUN`으로 전환하고 실제 업무 경로 검사 |
+
+`QUIESCED`라는 상태 이름만으로 쓰기가 멈췄다고 판단하지 않습니다. 실제 쓰기 가능 여부는 `observed.businessWriteAccess`와 프록시 상태로 확인합니다. `CUTOVER`와 `ROLLBACK`에는 최신 실제 업무 정지 근거가 필요하며, 검사 전용 참조는 거절합니다. 근거에는 전환 ID·세대·토폴로지 버전·만료가 있어 과거 확인을 재사용하지 못하게 합니다.
+
+#### ④ 전환 근거는 최종 LSN: 마지막 커밋이 대상에 내구성 있게 적용됐는가
+
+원본 writer를 `NOLOGIN`으로 바꾸는 것만으로 기존 연결이 사라지지는 않습니다. PgBouncer를 멈추고 **기존 업무 세션과 prepared transaction이 0개인지** 확인한 뒤 최종 복제 경계를 만듭니다.
+
+```txt
+1. 원본에 barrier marker를 synchronous_commit=on으로 커밋
+2. 그 커밋 이후의 WAL 경계 LSN 저장
+3. 두 번째 marker를 커밋 (업무 쓰기가 없어도 복제가 경계를 지나게 함)
+4. 대상에서 두 번째 marker가 보이는지 확인
+5. pg_replication_origin_progress(origin, true) ≥ 저장한 경계인지 확인
+6. subscription 비활성화와 apply worker 종료 확인
+7. 등록한 sequence의 last_value · is_called를 대상으로 맞춤
+```
+
+단순히 LSN 값이 존재하거나 복제 지연이 0으로 보인다는 이유로 통과시키지 않습니다. 저장한 barrier는 현재 이전·전환 시도와 연결하고, 실제 적용 위치가 경계에 도달해야 합니다. 시퀀스도 별도로 맞춰 전환 후 새 주문 ID가 기존 ID와 충돌하지 않게 합니다.
+
+**관리형 직접 복제는 정지 중 테이블 전체 digest 비교를 하지 않습니다.** 등록한 테이블의 초기 복사 완료, 최종 barrier와 적용 LSN, schema·시퀀스, writer 차단과 경로를 근거로 전환합니다. 정지 시간을 줄이는 대신 모든 행 내용의 전수 일치를 검사한 결과로는 표현하지 않습니다. 클라우드 실험에서는 대상 새 주문·혼합 트랜잭션 결과·주문과 재고의 불변식을 별도로 확인했습니다.
+
+#### ⑤ 롤백의 경계: 대상 쓰기를 열 가능성을 기록하면 원본 복귀 금지
+
+현재 관리형 프로필은 `BEFORE_TARGET_WRITE`만 지원하고 **역방향 CDC를 구성하지 않습니다.** `REVERSE_REQUIRED` 정책은 거절합니다.
+
+| 상황 | 처리 |
+|---|---|
+| 대상 쓰기 허용 전 중단 | 실제 상태를 대조한 뒤 명시적 `ROLLBACK`으로 원본 경로 복귀·DB 쓰기 재개. `RESUME SOURCE` 확인 후 앱 재개 |
+| 미사용 대상이 응답하지 않음 | 저장된 대상 차단 근거와 대상 쓰기 허용 의도가 없다는 기록, 현재 원본·프록시·업무 정지 근거를 확인해 원본 복귀 가능. 최종 정리는 대상 재연결 필요 |
+| 대상 쓰기 허용 의도 기록 후 | 실제 쓰기가 0건으로 보여도 원본 복귀 거절. 원본이 최신이라는 근거가 없기 때문 |
+| 정지 시간 제한 초과 | 새 대상 전환을 막고 실제 상태에 맞는 명시적 복구 수행. 시간 초과만으로 자동 재개하지 않음 |
+
+`CUTOVER`는 대상 writer 권한을 열기 **전에** `targetWritesIntent`를 영속 기록합니다. 실제 권한 변경 뒤 응답을 잃어도 이 기록을 지우지 않으므로, 대상에 쓰였을 가능성이 있는 데이터를 무시하고 원본으로 돌아가지 않습니다. 정상 완료 후에는 현재 관리형 프로필의 빠른 롤백 범위가 이미 닫힌 상태입니다.
+
+#### ⑥ 응답 유실과 재시작: 기록을 대조하고, 불명확한 변경은 재전송하지 않기
+
+- **접수는 트랜잭션으로 묶습니다.** DynamoDB에 명령·멱등 응답·revision 검사를 함께 반영합니다. 같은 `Idempotency-Key`와 본문은 최초 작업을 돌려주고, 같은 키에 다른 본문은 거절합니다. HTTP `202`는 실행 완료가 아닌 접수 성공입니다.
+- **외부 변경 전에 의도를 기록합니다.** 이후 결과를 확인하지 못하면 `UNKNOWN`으로 멈춥니다. `RECONCILE`이 경로·writer 권한·`PAUSE`·복제 근거·이전 실행 연결을 대조하며, 대조 자체는 경로를 바꾸거나 쓰기를 열지 않습니다.
+- **대상에서 이미 재개했다면 그 상태를 유지합니다.** 응답 유실 때문에 전환을 처음부터 다시 실행하거나 원본으로 돌리지 않습니다. 최신 근거로 남은 재개 작업만 완료하거나 `RESUME`으로 결과를 확인합니다.
+- **Worker 잠금은 자동 만료하지 않습니다.** 강제 종료 뒤 시간만 지나 새 실행기가 인계하지 않습니다. 이전 실행기의 실제 종료와 원격 연결을 확인하고 `recover-lock`으로 잠금을 복구한 뒤 대조해야 합니다. 중단한 외부 변경을 자동 재실행하지 않습니다.
+- **정상 경로와 정지 경로를 복원합니다.** 저장된 `TARGET · OPEN`은 대상 운영으로, `HELD · PAUSE`는 writer 차단을 유지한 상태로 복원합니다. DynamoDB 장애 때는 새 외부 변경을 시작하지 않습니다.
+- **상태 조회 장애와 명령 실패를 구분합니다.** 일시적인 GET 관측 실패는 진행 조건을 미확인으로 표시하고 다음 조회에서 다시 확인합니다. 이미 성공한 명령을 실패로 덮어쓰거나 실제 명령의 `UNKNOWN`을 자동 해제하지 않습니다.
+
+#### ⑦ 상시 접속점과 다음 단계 승인: DB가 열렸다고 이전이 끝난 것은 아님
+
+동적 binding은 **DB별 PgBouncer alias**를 만들고 실제 앱 계정의 접속을 검증한 뒤 주소를 발급합니다. 같은 DB를 쓰는 여러 앱은 같은 binding을 공유하고 업무 정지 확인 대상도 합칩니다. 전환 때는 해당 alias의 host·port·dbname을 바꾸되 주석·pool 옵션·`%include`와 파일 권한을 보존해 원자적으로 교체하고 `RELOAD`합니다. 다른 앱의 alias는 유지합니다.
+
+다음 리소스로 진행하려면 DB 경로·권한뿐 아니라 **앱 RUNNING, 실제 업무 probe와 30초 안정 구간**이 필요합니다. 관측 간격이 10초를 넘거나 토폴로지·업무 상태·검사 결과가 바뀌면 안정 구간을 다시 셉니다. DB 접속 검사만으로 앱 업무 성공을 대신하지 않습니다.
+
+`FINALIZE`는 보존 기간과 최신 진행 근거를 확인한 뒤 **이 계획의 publication·subscription·slot만** 정리합니다. 원본 DB·테이블·업무 데이터는 삭제하지 않고, 앱의 상시 접속점도 유지합니다.
+
+#### 선택의 이유와 남은 제약
+
+| 설계 선택 | 이유 · 대가 |
+|---|---|
+| 고정 PgBouncer + 단일 변경 실행기 | 앱의 DB 주소를 유지하고 경로 변경을 직렬화합니다. 단일 PgBouncer·Task는 장애점이며 Task 교체 시 앱 연결이 끊깁니다. |
+| 최종 LSN 확인, 정지 중 전수 digest 생략 | 마지막 커밋 적용을 확인하며 정지 시간을 줄입니다. 행 내용 전체 비교와 대용량 정지 시간 상한은 보장하지 않습니다. |
+| 관리형 대상 쓰기 이후 롤백 거절 | 역방향 CDC 없는 원본 복귀로 새 쓰기를 잃지 않게 합니다. 관리형 역복제와 유실 감수 롤백은 지원하지 않습니다. |
+| 등록 범위를 제한 | 같은 schema, PK·DEFAULT replica identity의 일반 테이블과 등록한 시퀀스·모든 writer가 필요합니다. DDL·RLS·파티션·사용자 trigger·large object·2PC는 지원 범위 밖입니다. |
+| 앱·관리 접속 `verify-full` | 인증서와 호스트 이름을 검증합니다. 실제 Cloud SQL → RDS subscription 시험은 `sslmode=require`로 암호화만 했으므로 복제 연결의 CA·호스트 검증과 구분합니다. |
+| 버전별 실측 보존 | 클라우드 v1·로컬 v2·자체 운영 랩의 결과를 구분합니다. 실제 ECS·IAM·장시간 부하·프록시 HA와 v2 클라우드 성능은 추가 검증이 필요합니다. |
+
+근거: [현재 구현 범위](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor/blob/f4d41f6/README.md) · [v2 명령·복구 규약](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor/blob/f4d41f6/docs/atomic-cutover.md) · [관리형 직접 복제와 제약](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor/blob/f4d41f6/docs/managed-logical.md) · [클라우드 실측 JSON](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor/blob/f4d41f6/docs/performance/2026-11-06-native-e2e.json) · [로컬 성능 조건](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor/blob/f4d41f6/docs/performance-report.md) · [전환 실행 코드](https://github.com/SoftBank-2026-Hackathon-Foxtrot/db-migration-adaptor/blob/f4d41f6/src/db_operator/atomic.py)
 
 ### redis-migrator · Redis
 [redis-migrator](https://github.com/SoftBank-2026-Hackathon-Foxtrot/redis-migrator) · 이현수 · [상세 설계](https://app.notion.com/p/40f8bee9ada481c080bdd4b4e8109e45)
