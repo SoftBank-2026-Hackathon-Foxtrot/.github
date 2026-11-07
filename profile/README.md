@@ -146,7 +146,8 @@
 | 연속 이전 | AWS → 온프레 → GCP, 같은 도구 · 같은 절차 |
 
 <picture>
-  <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/redis-migrator/release/2/docs/architecture.png" alt="redis-migrator 구조도와 컷오버 순서" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/redis-dark.png">
+  <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/repos/redis.png" alt="redis-migrator 구조도" width="100%">
 </picture>
 
 **구성.** 앱은 고정 주소의 **Go RESP 프록시**에만 접속합니다. 앱용 Redis 비밀번호는 프록시만 압니다. **Sync Worker**(Go)는 요청 경로 밖에서 양쪽 Redis를 맞추고, **statemig**(FastAPI)가 단계를 지시합니다. 전환 기록 `control.json`(세대 `gen`, 쓰기 대상 `active`, 큐 소비 대상 `consume`, 정지 여부 `paused`)은 EFS에 두고 rename으로 원자적으로 교체합니다.
