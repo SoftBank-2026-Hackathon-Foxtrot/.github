@@ -1,5 +1,11 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/banner.png" alt="Foxtrot: Beyond Lock-In. 실행 중인 앱을 멈추지 않고, 클라우드 사이로 옮깁니다." width="100%">
+  <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/fox.png" alt="카메라를 바라보는 귀여운 붉은 여우" width="280">
+</p>
+
+<h1 align="center">Foxtrot 🦊</h1>
+
+<p align="center">
+  <b>상태 있는 서비스의 데이터와 세션까지 보존하면서 클라우드 경계를 넘나드는 여우같은 플랫폼</b>
 </p>
 
 <p align="center">
