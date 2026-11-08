@@ -1,7 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/fox.png" alt="카메라를 바라보는 귀여운 붉은 여우" height="320">
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/foxtrot-dance.gif" alt="폭스트롯을 추는 두 사람의 애니메이션" height="320">
+  <img src="https://raw.githubusercontent.com/SoftBank-2026-Hackathon-Foxtrot/.github/main/profile/assets/fox.png" alt="카메라를 바라보는 귀여운 붉은 여우" width="280">
 </p>
 
 <h1 align="center">Foxtrot 🦊</h1>
